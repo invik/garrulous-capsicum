@@ -25,7 +25,6 @@ public class App {
     private static String screenNameForManualRTDetectionPattern = "@?(\\w){4,15}:?";
     private static Pattern twitterUsernamePattern = Pattern.compile(usernamePattern);
     private static Long mostRecentId;
-    private static Long startId;
     private static Integer maxSearches = 0;
     private static List<String> blackList;
     private final static org.slf4j.Logger LOGGER = LoggerFactory.getLogger(App.class);
@@ -36,6 +35,7 @@ public class App {
     private static String consumerSecret;
     private static Map<String, Integer> rateLimitStatusMap;
     private static Map<String, RateLimitStatus> rateLimitStatusMapOrig;
+    private static ResponseList<Status> mostRecentStatuses;
 
 
     public static void main(String[] args) throws Exception {
@@ -47,12 +47,11 @@ public class App {
             f = new FileInputStream(App.DLED);
             ObjectInputStream s = new ObjectInputStream(f);
             mostRecentId = (Long) s.readObject();
-            startId = mostRecentId;
             s.close();
             LOGGER.debug("Chargement du fichier de sauvegarde ok! Starting at status id {}", mostRecentId);
         } catch (FileNotFoundException | EOFException e) {
             LOGGER.debug("Fichier de sauvegarde absent ou illisible, creation...");
-            mostRecentId = startId = 0L;
+            mostRecentId = 1L;
         }
         // The factory instance is re-useable and thread safe.
         TwitterFactory factory = new TwitterFactory();
@@ -69,15 +68,27 @@ public class App {
 
         for (String endPoint : rateLimitStatusMapOrig.keySet()) {
             RateLimitStatus rateLimitStatus = rateLimitStatusMapOrig.get(endPoint);
-            LOGGER.debug("Enpoint: {}", endPoint);
-            LOGGER.debug("Limit: {}", rateLimitStatus.getLimit());
-            LOGGER.debug("Remaining: {}", rateLimitStatus.getRemaining());
-            LOGGER.debug("ResetTimeInSeconds: {}", rateLimitStatus.getResetTimeInSeconds());
-            LOGGER.debug("SecondsUntilReset: {}", rateLimitStatus.getSecondsUntilReset());
+            LOGGER.trace("Enpoint: {}", endPoint);
+            LOGGER.trace("Limit: {}", rateLimitStatus.getLimit());
+            LOGGER.trace("Remaining: {}", rateLimitStatus.getRemaining());
+            LOGGER.trace("ResetTimeInSeconds: {}", rateLimitStatus.getResetTimeInSeconds());
+            LOGGER.trace("SecondsUntilReset: {}", rateLimitStatus.getSecondsUntilReset());
+        }
+
+
+        App.waitForAvailability("/statuses/user_timeline");
+        int pageNumber = 1;
+        mostRecentStatuses = twitter.getUserTimeline(new Paging(pageNumber, 200, 1, mostRecentId));
+        int mostRecentStatusesNumber = mostRecentStatuses.size();
+        while (App.rateLimitStatusMap.get("/statuses/user_timeline") > 0 && mostRecentStatusesNumber == 200) {
+            App.waitForAvailability("/statuses/user_timeline");
+            pageNumber++;
+            List<Status> statusList = twitter.getUserTimeline(new Paging(pageNumber, 200, 1, mostRecentId));
+            mostRecentStatusesNumber = statusList.size();
+            mostRecentStatuses.addAll(statusList);
         }
 
         App.waitForAvailability("/search/tweets");
-
         Query query = new Query("follow rt concours");
         RateLimitStatus rateLimitStatus = App.rateLimitStatusMapOrig.get("/search/tweets");
         int remaining = rateLimitStatus.getRemaining() > maxSearches ? maxSearches : rateLimitStatus.getRemaining();
@@ -137,9 +148,9 @@ public class App {
                 }
             }
         }
-        App.waitForAvailability("/statuses/retweets/:id");
-        ResponseList<Status> statuses = twitter.getRetweets(status.getId());
-        if (!statuses.parallelStream().filter(status1 -> status1.getUser().getScreenName().equals(username)).collect(Collectors.toList()).isEmpty()) {
+
+        List<Status> filteredStatuses = mostRecentStatuses.stream().filter(status1 -> status1.getRetweetedStatus().getId() == status.getId()).collect(Collectors.toList());
+        if (!filteredStatuses.isEmpty()) {
             return;
         }
         LOGGER.debug("Status id: {}", status.getId());
@@ -163,10 +174,13 @@ public class App {
             try {
                 twitter.retweetStatus(status.getId());
             } catch (TwitterException e) {
-                //Probably an already retweeted tweet...
+                LOGGER.trace("Probably an already retweeted tweet... {}", status.getId());
+
                 return;
             }
-            twitter.createFavorite(status.getId());
+            if (status.getText().toLowerCase().contains("fav")) {
+                twitter.createFavorite(status.getId());
+            }
             responseList.forEach(username -> {
                 try {
                     twitter.createFriendship(username.getId());
