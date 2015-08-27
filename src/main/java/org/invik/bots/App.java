@@ -6,6 +6,7 @@ import twitter4j.auth.AccessToken;
 
 import java.io.*;
 import java.net.URISyntaxException;
+import java.net.URLEncoder;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,8 +21,11 @@ public class App {
     private static File DLED;
     private static Twitter twitter;
     private static Properties CONFIG;
-    private static Pattern twitterUsernamePattern = Pattern.compile("@(\\w){1,15}");
+    private static String usernamePattern = "@(\\w){1,15}";
+    private static String screenNameForManualRTDetectionPattern = "@?(\\w){4,15}:?";
+    private static Pattern twitterUsernamePattern = Pattern.compile(usernamePattern);
     private static Long mostRecentId;
+    private static Long startId;
     private static Integer maxSearches = 0;
     private static List<String> blackList;
     private final static org.slf4j.Logger LOGGER = LoggerFactory.getLogger(App.class);
@@ -43,11 +47,12 @@ public class App {
             f = new FileInputStream(App.DLED);
             ObjectInputStream s = new ObjectInputStream(f);
             mostRecentId = (Long) s.readObject();
+            startId = mostRecentId;
             s.close();
             LOGGER.debug("Chargement du fichier de sauvegarde ok! Starting at status id {}", mostRecentId);
         } catch (FileNotFoundException | EOFException e) {
             LOGGER.debug("Fichier de sauvegarde absent ou illisible, creation...");
-            mostRecentId = 0L;
+            mostRecentId = startId = 0L;
         }
         // The factory instance is re-useable and thread safe.
         TwitterFactory factory = new TwitterFactory();
@@ -87,7 +92,7 @@ public class App {
             statuses.forEach(status -> {
                 try {
                     analyzeStatus(status);
-                } catch (TwitterException | InterruptedException e) {
+                } catch (TwitterException | InterruptedException | UnsupportedEncodingException e) {
                     LOGGER.error("Error when analyzing status", e);
                 }
             });
@@ -103,7 +108,7 @@ public class App {
         return new AccessToken(token, tokenSecret);
     }
 
-    private static void analyzeStatus(Status status) throws TwitterException, InterruptedException {
+    private static void analyzeStatus(Status status) throws TwitterException, InterruptedException, UnsupportedEncodingException {
         if (mostRecentId < status.getId()) {
             mostRecentId = status.getId();
         }
@@ -118,6 +123,19 @@ public class App {
         }
         if (blackList.contains(status.getUser().getScreenName())) {
             return;
+        }
+        String[] text = status.getText().split(" ");
+        for (int i = 0; i < text.length; i++) {
+            if (text[i].equals("RT") && (i + 1 < text.length - 1) && text[i + 1].matches(App.screenNameForManualRTDetectionPattern)) {
+                App.waitForAvailability("/users/show/:id");
+                try {
+                    if (twitter.showUser(URLEncoder.encode((text[i + 1].endsWith(":") ? text[i + 1].substring(0, text[i + 1].length() - 1) : text[i + 1]), "UTF-8")) != null) {
+                        return;
+                    }
+                } catch (TwitterException e) {
+                    System.out.println("Assumed not manual RT, going on");
+                }
+            }
         }
         App.waitForAvailability("/statuses/retweets/:id");
         ResponseList<Status> statuses = twitter.getRetweets(status.getId());
@@ -136,13 +154,18 @@ public class App {
         if (usernamesToFollow.size() == 1) {
             responseList = new ArrayList<>();
             App.waitForAvailability("/users/show/:id");
-            responseList.add(twitter.showUser(usernamesToFollow.get(0)));
+            responseList.add(twitter.showUser(URLEncoder.encode(usernamesToFollow.get(0), "UTF-8")));
         } else {
             App.waitForAvailability("/users/lookup");
             responseList = twitter.lookupUsers(usernamesToFollow.stream().map(user -> user.substring(1)).collect(Collectors.toList()).toArray(new String[usernamesToFollow.size()]));
         }
         if (ANALYZE) {
-            twitter.retweetStatus(status.getId());
+            try {
+                twitter.retweetStatus(status.getId());
+            } catch (TwitterException e) {
+                //Probably an already retweeted tweet...
+                return;
+            }
             twitter.createFavorite(status.getId());
             responseList.forEach(username -> {
                 try {
