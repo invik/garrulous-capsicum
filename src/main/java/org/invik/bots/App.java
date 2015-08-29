@@ -90,12 +90,20 @@ public class App {
 
         App.waitForAvailability("/search/tweets");
         Query query = new Query("follow rt concours");
-        RateLimitStatus rateLimitStatus = App.rateLimitStatusMapOrig.get("/search/tweets");
-        int remaining = rateLimitStatus.getRemaining() > maxSearches ? maxSearches : rateLimitStatus.getRemaining();
-        query.count(remaining).setResultType(Query.ResultType.mixed);
         if (mostRecentId != 0) {
             query.setSinceId(mostRecentId);
         }
+        RateLimitStatus rateLimitStatus = App.rateLimitStatusMapOrig.get("/search/tweets");
+        int remaining = rateLimitStatus.getRemaining() > maxSearches ? maxSearches : rateLimitStatus.getRemaining();
+        searchTweets(query, remaining, Query.ResultType.popular);
+        searchTweets(query, remaining, Query.ResultType.mixed);
+        saveId();
+        System.exit(0);
+    }
+
+    private static void searchTweets(Query query, int remaining, Query.ResultType resultType) throws TwitterException {
+        query.count(remaining).setResultType(resultType);
+
         QueryResult result;
         do {
             result = twitter.search(query);
@@ -109,8 +117,6 @@ public class App {
             });
             remaining--;
         } while ((query = result.nextQuery()) != null && remaining > 0);
-        saveId();
-        System.exit(0);
     }
 
     private static AccessToken loadAccessToken() {
