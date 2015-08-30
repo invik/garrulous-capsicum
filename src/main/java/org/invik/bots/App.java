@@ -142,6 +142,10 @@ public class App {
             return;
         }
         String[] text = status.getText().split(" ");
+        App.waitForAvailability("/statuses/show/:id");
+        if (twitter.showStatus(status.getId()).isRetweetedByMe()) {
+            return;
+        }
         for (int i = 0; i < text.length; i++) {
             if (text[i].equals("RT") && (i + 1 < text.length - 1) && text[i + 1].matches(App.screenNameForManualRTDetectionPattern)) {
                 App.waitForAvailability("/users/show/:id");
