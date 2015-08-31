@@ -75,7 +75,6 @@ public class App {
             LOGGER.trace("SecondsUntilReset: {}", rateLimitStatus.getSecondsUntilReset());
         }
 
-
         App.waitForAvailability("/statuses/user_timeline");
         int pageNumber = 1;
         mostRecentStatuses = twitter.getUserTimeline(new Paging(pageNumber, 200, 1, mostRecentId));
@@ -87,6 +86,7 @@ public class App {
             mostRecentStatusesNumber = statusList.size();
             mostRecentStatuses.addAll(statusList);
         }
+        LOGGER.debug("mostRecentStatuses size {}", mostRecentStatuses.size());
 
         App.waitForAvailability("/search/tweets");
         Query query = new Query("follow rt concours");
@@ -159,9 +159,11 @@ public class App {
             }
         }
 
-        List<Status> filteredStatuses = mostRecentStatuses.stream().filter(status1 -> status1.getRetweetedStatus().getId() == status.getId()).collect(Collectors.toList());
-        if (!filteredStatuses.isEmpty()) {
-            return;
+        if (mostRecentStatuses != null && mostRecentStatuses.size() != 0) {
+            List<Status> filteredStatuses = mostRecentStatuses.stream().filter(status1 -> status1.getRetweetedStatus() != null && status1.getRetweetedStatus().getId() == status.getId()).collect(Collectors.toList());
+            if (filteredStatuses == null || !filteredStatuses.isEmpty()) {
+                return;
+            }
         }
         LOGGER.debug("Status id: {}", status.getId());
         LOGGER.debug("Status retweet status: {}", status.getRetweetedStatus() == null ? "none" : status.getRetweetedStatus().getText());
