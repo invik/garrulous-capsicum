@@ -118,9 +118,9 @@
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
+                    <descriptors>
+                        <descriptor>src/assemblies/jar-with-dependencies.xml</descriptor>
+                    </descriptors>
                     <archive>
                         <manifest>
                             <mainClass>org.invik.bots.App</mainClass>
