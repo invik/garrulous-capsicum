@@ -33,6 +33,7 @@ public class App {
     private static String accessTokenSecret;
     private static String consumerKey;
     private static String consumerSecret;
+    private static String[] searches;
     private static Map<String, Integer> rateLimitStatusMap;
     private static Map<String, RateLimitStatus> rateLimitStatusMapOrig;
     private static ResponseList<Status> mostRecentStatuses;
@@ -88,15 +89,18 @@ public class App {
         }
         LOGGER.debug("mostRecentStatuses size {}", mostRecentStatuses.size());
 
-        App.waitForAvailability("/search/tweets");
-        Query query = new Query("follow rt concours");
-        if (mostRecentId != 0) {
-            query.setSinceId(mostRecentId);
+        for (final String search : searches) {
+            LOGGER.info("Current search {}", search);
+            App.waitForAvailability("/search/tweets");
+            Query query = new Query(search);
+            if (mostRecentId != 0) {
+                query.setSinceId(mostRecentId);
+            }
+            RateLimitStatus rateLimitStatus = App.rateLimitStatusMapOrig.get("/search/tweets");
+            int remaining = rateLimitStatus.getRemaining() > maxSearches ? maxSearches : rateLimitStatus.getRemaining();
+            searchTweets(query, remaining, Query.ResultType.popular);
+            searchTweets(query, remaining, Query.ResultType.mixed);
         }
-        RateLimitStatus rateLimitStatus = App.rateLimitStatusMapOrig.get("/search/tweets");
-        int remaining = rateLimitStatus.getRemaining() > maxSearches ? maxSearches : rateLimitStatus.getRemaining();
-        searchTweets(query, remaining, Query.ResultType.popular);
-        searchTweets(query, remaining, Query.ResultType.mixed);
         saveId();
         System.exit(0);
     }
@@ -232,6 +236,7 @@ public class App {
         App.accessToken = App.CONFIG.getProperty("auth.accesstoken");
         App.accessTokenSecret = App.CONFIG.getProperty("auth.accesstokensecret");
         App.blackList = Arrays.asList(App.CONFIG.getProperty("blacklist").split(";"));
+        App.searches = App.CONFIG.getProperty("searches").split(";");
 
         return true;
     }
