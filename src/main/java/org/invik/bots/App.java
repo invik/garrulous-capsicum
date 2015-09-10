@@ -26,7 +26,7 @@ public class App {
     private static Pattern twitterUsernamePattern = Pattern.compile(usernamePattern);
     private static Long mostRecentId;
     private static Integer maxSearches = 0;
-    private static List<String> blackList;
+    private static List<String> usersBlackList;
     private final static org.slf4j.Logger LOGGER = LoggerFactory.getLogger(App.class);
     private static String username;
     private static String accessToken;
@@ -37,6 +37,7 @@ public class App {
     private static Map<String, Integer> rateLimitStatusMap;
     private static Map<String, RateLimitStatus> rateLimitStatusMapOrig;
     private static ResponseList<Status> mostRecentStatuses;
+    private static List<String> wordsBlacklist;
 
 
     public static void main(String[] args) throws Exception {
@@ -142,7 +143,10 @@ public class App {
         if (!usernamesToFollow.contains("@" + status.getUser().getScreenName()) && !usernamesToFollow.isEmpty()) {
             return;
         }
-        if (blackList.contains(status.getUser().getScreenName())) {
+        if (usersBlackList.contains(status.getUser().getScreenName())) {
+            return;
+        }
+        if (!wordsBlacklist.stream().filter(st -> status.getText().contains(st)).collect(Collectors.toList()).isEmpty()) {
             return;
         }
         String[] text = status.getText().split(" ");
@@ -235,8 +239,9 @@ public class App {
         App.consumerSecret = App.CONFIG.getProperty("auth.consumersecret");
         App.accessToken = App.CONFIG.getProperty("auth.accesstoken");
         App.accessTokenSecret = App.CONFIG.getProperty("auth.accesstokensecret");
-        App.blackList = Arrays.asList(App.CONFIG.getProperty("blacklist").split(";"));
+        App.usersBlackList = Arrays.asList(App.CONFIG.getProperty("blacklist").split(";"));
         App.searches = App.CONFIG.getProperty("searches").split(";");
+        App.wordsBlacklist = Arrays.asList(App.CONFIG.getProperty("words.blacklist").split(";"));
 
         return true;
     }
