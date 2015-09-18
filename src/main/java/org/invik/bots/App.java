@@ -77,14 +77,16 @@ public class App {
             LOGGER.trace("SecondsUntilReset: {}", rateLimitStatus.getSecondsUntilReset());
         }
 
+        final Long startingId = mostRecentId;
+
         App.waitForAvailability("/statuses/user_timeline");
         int pageNumber = 1;
-        mostRecentStatuses = twitter.getUserTimeline(new Paging(pageNumber, 200, 1, mostRecentId));
+        mostRecentStatuses = twitter.getUserTimeline(new Paging(pageNumber, 200, 1, startingId));
         int mostRecentStatusesNumber = mostRecentStatuses.size();
         while (App.rateLimitStatusMap.get("/statuses/user_timeline") > 0 && mostRecentStatusesNumber == 200) {
             App.waitForAvailability("/statuses/user_timeline");
             pageNumber++;
-            List<Status> statusList = twitter.getUserTimeline(new Paging(pageNumber, 200, 1, mostRecentId));
+            List<Status> statusList = twitter.getUserTimeline(new Paging(pageNumber, 200, 1, startingId));
             mostRecentStatusesNumber = statusList.size();
             mostRecentStatuses.addAll(statusList);
         }
@@ -94,8 +96,8 @@ public class App {
             LOGGER.info("Current search {}", search);
             App.waitForAvailability("/search/tweets");
             Query query = new Query(search);
-            if (mostRecentId != 0) {
-                query.setSinceId(mostRecentId);
+            if (startingId != 0) {
+                query.setSinceId(startingId);
             }
             RateLimitStatus rateLimitStatus = App.rateLimitStatusMapOrig.get("/search/tweets");
             int remaining = rateLimitStatus.getRemaining() > maxSearches ? maxSearches : rateLimitStatus.getRemaining();
@@ -122,12 +124,6 @@ public class App {
             });
             remaining--;
         } while ((query = result.nextQuery()) != null && remaining > 0);
-    }
-
-    private static AccessToken loadAccessToken() {
-        String token = App.accessToken; // load from a persistent store
-        String tokenSecret = App.accessTokenSecret; // load from a persistent store
-        return new AccessToken(token, tokenSecret);
     }
 
     private static void analyzeStatus(Status status) throws TwitterException, InterruptedException, UnsupportedEncodingException {
@@ -244,6 +240,12 @@ public class App {
         App.wordsBlacklist = Arrays.asList(App.CONFIG.getProperty("words.blacklist").split(";"));
 
         return true;
+    }
+
+    private static AccessToken loadAccessToken() {
+        String token = App.accessToken; // load from a persistent store
+        String tokenSecret = App.accessTokenSecret; // load from a persistent store
+        return new AccessToken(token, tokenSecret);
     }
 
     private static void saveId() {
