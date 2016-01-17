@@ -1,5 +1,6 @@
 package org.invik.bots;
 
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.LoggerFactory;
 import twitter4j.*;
 import twitter4j.auth.AccessToken;
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
  */
 public class App {
 
+    public static final int PAGE_COUNT = 200;
     private static Boolean ANALYZE = false;
     private static File DLED;
     private static Twitter twitter;
@@ -81,12 +83,12 @@ public class App {
 
         App.waitForAvailability("/statuses/user_timeline");
         int pageNumber = 1;
-        mostRecentStatuses = twitter.getUserTimeline(new Paging(pageNumber, 200, 1, startingId));
+        mostRecentStatuses = twitter.getUserTimeline(new Paging(pageNumber, PAGE_COUNT, 1, startingId));
         int mostRecentStatusesNumber = mostRecentStatuses.size();
-        while (App.rateLimitStatusMap.get("/statuses/user_timeline") > 0 && mostRecentStatusesNumber == 200) {
+        while (App.rateLimitStatusMap.get("/statuses/user_timeline") > 0 && mostRecentStatusesNumber == PAGE_COUNT) {
             App.waitForAvailability("/statuses/user_timeline");
             pageNumber++;
-            List<Status> statusList = twitter.getUserTimeline(new Paging(pageNumber, 200, 1, startingId));
+            List<Status> statusList = twitter.getUserTimeline(new Paging(pageNumber, PAGE_COUNT, 1, startingId));
             mostRecentStatusesNumber = statusList.size();
             mostRecentStatuses.addAll(statusList);
         }
@@ -108,13 +110,14 @@ public class App {
         System.exit(0);
     }
 
-    private static void searchTweets(Query query, int remaining, Query.ResultType resultType) throws TwitterException {
+    private static void searchTweets(Query query, int remaining, Query.ResultType resultType) throws TwitterException, InterruptedException {
         query.count(remaining).setResultType(resultType);
 
         QueryResult result;
         do {
             result = twitter.search(query);
             List<Status> statuses = result.getTweets().stream().filter(status1 -> !status1.isRetweetedByMe() && !status1.isRetweet()).collect(Collectors.toList());
+            LOGGER.debug("Found {} tweets for query {}", statuses.size(), query.getQuery());
             statuses.forEach(status -> {
                 try {
                     analyzeStatus(status);
@@ -140,9 +143,11 @@ public class App {
             return;
         }
         if (usersBlackList.contains(status.getUser().getScreenName())) {
+            LOGGER.info("Tweet is from a blacklisted account {}", status.getUser().getScreenName());
             return;
         }
-        if (!wordsBlacklist.stream().filter(st -> status.getText().contains(st)).collect(Collectors.toList()).isEmpty()) {
+        if (!wordsBlacklist.stream().filter(st -> StringUtils.containsIgnoreCase(status.getText(), st)).collect(Collectors.toList()).isEmpty()) {
+            LOGGER.info("Tweet {} contains a blacklisted word: https://twitter.com/{}/status/{}", status.getId(), status.getUser().getScreenName(), status.getId());
             return;
         }
         String[] text = status.getText().split(" ");
